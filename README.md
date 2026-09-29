@@ -4,19 +4,16 @@ A React frontend, Python FastAPI backend, and MySQL 8.4 database.
 
 ## Deploy publicly with Railway
 
-The public site lets visitors read all tasks and notes. Only the owner can add, edit, complete, reorder, or delete. Do not put private information in public tasks.
+This is a shared public workspace. Anyone with the URL can create, edit, complete, reorder, and delete lists and tasks without signing in. Everyone sees the same database; tasks are not private per visitor.
 
 1. Upload the **contents** of this folder to your GitHub repository, preserving `backend` and `frontend` folders. `Dockerfile` and `railway.json` must be at the repository root. Upload the extracted files, not the ZIP. Skip `node_modules`, `dist`, and Python cache folders.
 2. In Railway, create a project from that GitHub repository.
 3. Add a **MySQL** database service in the same Railway project.
-4. On the app service, add these variables:
+4. On the app service, add this variable:
    - `DATABASE_URL`: `${{MySQL.MYSQL_URL}}` (a reference to the MySQL service's private URL; if its name differs, use that name).
-   - `OWNER_PASSWORD`: choose a unique password of at least 20 ASCII characters. Enter it directly into Railway, never in GitHub or chat. A password manager can generate it.
 5. Deploy the app. It builds React and runs FastAPI in one service. The app listens on Railway's `PORT` automatically and creates its database tables at startup.
 6. After the deployment is healthy, open the app service's **Settings → Networking → Generate Domain**. Share its HTTPS address.
-7. On your new site, choose **Owner sign in** and enter the same owner password to manage tasks.
 
-A missing or too-short owner password leaves editing locked. Signing out or refreshing the page clears the owner's sign-in from browser memory. No password is saved in browser storage. Use the generated HTTPS address for sign-in. There is one owner, not separate accounts for visitors. Incorrect sign-ins are limited to 10 attempts per minute per server-visible client address; this limit is held in memory, so keep one app replica for this simple deployment.
 
 Railway hosts MySQL separately; it does not use the local `compose.yaml`. Railway charges depend on your plan and usage. The old ZIP in the repository can remain as an archive; the extracted files control deployment.
 
@@ -26,16 +23,16 @@ Official guides: [FastAPI](https://docs.railway.com/guides/fastapi), [MySQL](htt
 
 1. Install [Docker Desktop for Windows](https://docs.docker.com/desktop/setup/install/windows-install/). Follow its installer, including any WSL or restart instructions, and open Docker Desktop. Wait until its engine is running. Use Linux containers (the default).
 2. Open this `todo-app` folder in File Explorer.
-3. Create a file named `.env` in this folder containing `OWNER_PASSWORD=your-unique-password` (at least 20 ASCII characters). Keep this file private. Then double-click **Start App.cmd**. The first run downloads and builds the app and can take several minutes. Keep the window open until it finishes.
+3. Double-click **Start App.cmd**. The first run downloads and builds the app and can take several minutes. Keep the window open until it finishes.
 4. Your browser opens at **http://localhost:8080**. Bookmark it.
 
-Docker runs Python, React, and MySQL together; you do not need to install those separately. Internet access is needed for the initial download/build. Visitors have read-only access. Use Owner sign in to manage tasks.
+Docker runs Python, React, and MySQL together; you do not need to install those separately. Internet access is needed for the initial download/build. Everyone can manage tasks without a password.
 
 **Stop:** double-click **Stop App.cmd**. Your tasks remain in the MySQL volume. Closing your browser also keeps your tasks. Start the app again with **Start App.cmd**.
 
 ## How to use it
 
-Sign in as the owner to use the editing controls below. Visitors can switch lists, filter tasks, and read descriptions.
+Use the editing controls immediately; no account or password is required.
 
 - **Lists:** enter a name in the sidebar and press `+`. Use Rename list or Delete list for the selected list. Deleting a list deletes its tasks after confirmation.
 - **Add tasks:** type in the main input and press Enter or Add task.
@@ -72,7 +69,7 @@ API documentation is available at http://localhost:8080/docs while the app is ru
 
 For frontend development, install Node.js 22, open `frontend`, run `npm install`, then `npm run dev`. Its development server forwards API requests to FastAPI on port 8000. For backend development, install Python 3.12, install `backend/requirements.txt` in a virtual environment, set `DATABASE_URL` to your MySQL connection URL, then run `uvicorn main:app --reload` from `backend`.
 
-This version has one owner and public viewing. The supplied Compose database credentials are only for local development. Railway supplies separate database credentials. Never commit real passwords or a `.env` file.
+This version has shared public editing. Existing Railway OWNER_PASSWORD variables are ignored and can be left in place. The supplied Compose database credentials are only for local development. Railway supplies separate database credentials. Never commit real passwords or a `.env` file.
 
 ## Verification and local preview
 

@@ -18,7 +18,6 @@ services:
     build: .
     environment:
       DATABASE_URL: mysql+pymysql://todo:todo_local_password@db:3306/todo
-      OWNER_PASSWORD: ${OWNER_PASSWORD:-}
     ports:
       - "127.0.0.1:8080:8000"
     depends_on:
