@@ -1,13 +1,8 @@
 import os
-import hashlib
-import secrets
-import threading
-import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import Depends, FastAPI, HTTPException, Request
-from fastapi.security import HTTPBasic, HTTPBasicCredentials
+from fastapi import FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import Boolean, ForeignKey, Integer, String, Text, create_engine, select
@@ -17,31 +12,6 @@ DATABASE_URL = os.getenv('DATABASE_URL', 'mysql+pymysql://todo:todo_local_passwo
 if DATABASE_URL.startswith('mysql://'):
     DATABASE_URL = DATABASE_URL.replace('mysql://', 'mysql+pymysql://', 1)
 engine = create_engine(DATABASE_URL, pool_pre_ping=True)
-
-# With no owner password configured, every write remains locked.
-basic_auth = HTTPBasic(auto_error=False)
-login_failures = {}
-login_lock = threading.Lock()
-
-def require_owner(request: Request, credentials: HTTPBasicCredentials | None = Depends(basic_auth)):
-    password = os.getenv('OWNER_PASSWORD', '')
-    if len(password) < 20:
-        raise HTTPException(503, 'Owner editing has not been configured.')
-    address = request.client.host if request.client else 'unknown'
-    now = time.monotonic()
-    with login_lock:
-        expired = [key for key, (_, start) in login_failures.items() if now - start >= 60]
-        for key in expired:
-            del login_failures[key]
-        count, start = login_failures.get(address, (0, now))
-        if count >= 10:
-            raise HTTPException(429, 'Too many attempts. Wait one minute and try again.')
-        supplied = credentials.password if credentials else ''
-        correct = secrets.compare_digest(hashlib.sha256(supplied.encode()).digest(), hashlib.sha256(password.encode()).digest())
-        if credentials is None or credentials.username != 'owner' or not correct:
-            login_failures[address] = (count + 1, start)
-            raise HTTPException(401, 'Only the owner can change tasks.')
-        login_failures.pop(address, None)
 
 class Base(DeclarativeBase):
     pass
@@ -114,17 +84,13 @@ async def response_headers(request, call_next):
         response.headers['Cache-Control'] = 'no-store'
     return response
 
-@app.get('/api/owner', dependencies=[Depends(require_owner)])
-def owner():
-    return {'ok': True}
-
 @app.get('/api/state')
 def state():
     with Session(engine) as db:
         return {'lists': [{'id': item.id, 'name': item.name} for item in db.scalars(select(TaskList).order_by(TaskList.id))],
                 'tasks': [task_dict(task) for task in db.scalars(select(Task).order_by(Task.position, Task.id))]}
 
-@app.post('/api/lists', status_code=201, dependencies=[Depends(require_owner)])
+@app.post('/api/lists', status_code=201)
 def add_list(data: ListInput):
     with Session(engine) as db:
         item = TaskList(name=data.name)
@@ -132,7 +98,7 @@ def add_list(data: ListInput):
         db.commit()
         return {'id': item.id, 'name': item.name}
 
-@app.put('/api/lists/{id}', dependencies=[Depends(require_owner)])
+@app.put('/api/lists/{id}')
 def edit_list(id: int, data: ListInput):
     with Session(engine) as db:
         item = require(db, TaskList, id)
@@ -140,7 +106,7 @@ def edit_list(id: int, data: ListInput):
         db.commit()
         return {'id': item.id, 'name': item.name}
 
-@app.delete('/api/lists/{id}', dependencies=[Depends(require_owner)])
+@app.delete('/api/lists/{id}')
 def delete_list(id: int):
     with Session(engine) as db:
         item = require(db, TaskList, id)
@@ -150,7 +116,7 @@ def delete_list(id: int):
         db.commit()
         return {'ok': True}
 
-@app.post('/api/tasks', status_code=201, dependencies=[Depends(require_owner)])
+@app.post('/api/tasks', status_code=201)
 def add_task(data: TaskInput):
     with Session(engine) as db:
         require(db, TaskList, data.list_id)
@@ -160,7 +126,7 @@ def add_task(data: TaskInput):
         db.commit()
         return task_dict(task)
 
-@app.put('/api/tasks/{id}', dependencies=[Depends(require_owner)])
+@app.put('/api/tasks/{id}')
 def edit_task(id: int, data: TaskInput):
     with Session(engine) as db:
         task = require(db, Task, id)
@@ -173,14 +139,14 @@ def edit_task(id: int, data: TaskInput):
         db.commit()
         return task_dict(task)
 
-@app.delete('/api/tasks/{id}', dependencies=[Depends(require_owner)])
+@app.delete('/api/tasks/{id}')
 def delete_task(id: int):
     with Session(engine) as db:
         db.delete(require(db, Task, id))
         db.commit()
         return {'ok': True}
 
-@app.put('/api/lists/{id}/order', dependencies=[Depends(require_owner)])
+@app.put('/api/lists/{id}/order')
 def reorder(id: int, data: OrderInput):
     with Session(engine) as db:
         require(db, TaskList, id)

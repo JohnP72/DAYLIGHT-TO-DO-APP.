@@ -1,23 +1,24 @@
 """API contract tests. SQLite isolates tests; deployment uses MySQL."""
 import importlib
-import os
-import base64
 
 import pytest
 from fastapi.testclient import TestClient
 
-@pytest.fixture
-def client(tmp_path, monkeypatch):
+@pytest.fixture(params=[None, 'legacy-owner-password-at-least-20'])
+def client(tmp_path, monkeypatch, request):
     monkeypatch.setenv('DATABASE_URL', 'sqlite:///' + str(tmp_path / 'test.db'))
-    monkeypatch.setenv('OWNER_PASSWORD', 'test-only-password-at-least-20')
+    if request.param is None:
+        monkeypatch.delenv('OWNER_PASSWORD', raising=False)
+    else:
+        monkeypatch.setenv('OWNER_PASSWORD', request.param)
     import main
     importlib.reload(main)
     with TestClient(main.app) as client:
-        client.headers['Authorization'] = 'Basic ' + base64.b64encode(b'owner:test-only-password-at-least-20').decode()
         yield client
     main.engine.dispose()
 
-def test_task_lifecycle(client):
+def test_task_lifecycle_without_login(client):
+    assert 'Authorization' not in client.headers
     first = client.get('/api/state').json()['lists'][0]['id']
     second = client.post('/api/lists', json={'name': 'Work'}).json()['id']
     a = client.post('/api/tasks', json={'title': 'First', 'list_id': first}).json()
@@ -43,35 +44,3 @@ def test_invalid_input_and_order(client):
         assert client.put(f'/api/lists/{id}/order', json={'ids':ids}).status_code == 409
     assert len(client.get('/api/state').json()['tasks']) == 1
 
-def test_public_cannot_mutate_anything(client):
-    id = client.get('/api/state').json()['lists'][0]['id']
-    task = client.post('/api/tasks', json={'title': 'Protected', 'list_id': id}).json()
-    before = client.get('/api/state').json()
-    del client.headers['Authorization']
-    assert client.get('/api/state').status_code == 200
-    routes = [
-        ('POST', '/api/lists', {'name':'Intruder'}),
-        ('PUT', f'/api/lists/{id}', {'name':'Changed'}),
-        ('DELETE', f'/api/lists/{id}', None),
-        ('POST', '/api/tasks', {'title':'Intruder', 'list_id':id}),
-        ('PUT', f"/api/tasks/{task['id']}", {'title':'Changed', 'list_id':id}),
-        ('DELETE', f"/api/tasks/{task['id']}", None),
-        ('PUT', f'/api/lists/{id}/order', {'ids':[task['id']]}),
-    ]
-    for method, path, data in routes:
-        assert client.request(method, path, json=data).status_code == 401
-    assert client.get('/api/state').json() == before
-
-def test_owner_auth_and_fail_closed(client, monkeypatch):
-    assert client.get('/api/owner').status_code == 200
-    client.headers['Authorization'] = 'Basic ' + base64.b64encode(b'owner:wrong').decode()
-    assert client.get('/api/owner').status_code == 401
-    monkeypatch.delenv('OWNER_PASSWORD')
-    assert client.post('/api/lists', json={'name':'Blocked'}).status_code == 503
-    assert client.get('/api/state').status_code == 200
-
-def test_password_guessing_is_limited(client):
-    client.headers['Authorization'] = 'Basic ' + base64.b64encode(b'owner:wrong').decode()
-    for _ in range(10):
-        assert client.get('/api/owner').status_code == 401
-    assert client.get('/api/owner').status_code == 429
